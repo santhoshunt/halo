@@ -39,6 +39,7 @@ enum class Tab(val label: String, @param:DrawableRes val icon: Int) {
 
 @Composable
 fun HaloRoot(repo: SettingsRepository, overlay: OverlayController, history: HistoryStore) {
+    CrashReportDialog()
     // Null until DataStore has loaded, so Setup never flashes for someone who finished it.
     val loaded by repo.settings.collectAsState(initial = null)
     val settings = loaded ?: return

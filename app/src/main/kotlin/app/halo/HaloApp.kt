@@ -28,6 +28,7 @@ class HaloApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         repo = SettingsRepository(this)
         settings = repo.settings.stateIn(appScope, SharingStarted.Eagerly, HaloSettings())
         overlay = OverlayController(this, settings)
