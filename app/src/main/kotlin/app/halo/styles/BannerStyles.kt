@@ -1,7 +1,6 @@
 package app.halo.styles
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,7 +36,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
@@ -47,35 +46,8 @@ import app.halo.notify.BannerAction
 import app.halo.overlay.BannerUi
 import kotlinx.coroutines.delay
 
-/** Colours and shape of one banner style. Text is always light on dark or dark on light. */
-private data class Palette(
-    val container: Color,
-    val border: Color,
-    val borderWidth: Dp,
-    val title: Color,
-    val body: Color,
-    val chipBorder: Color,
-    val corner: Dp,
-    /** Thread puts title and message on one line. */
-    val compact: Boolean,
-)
-
-private val Ink = Color(0xFF222222)
-private val InkMuted = Color(0xFF5F5E5A)
-private val InkLine = Color(0xFF444441)
-private val Paper = Color(0xFFFFFDF8)
-private val Light = Color(0xFFF0F4FF)
-private val LightMuted = Color(0xFFAAB8D4)
-
-private fun paletteFor(style: StyleId, accent: Int): Palette = when (style) {
-    StyleId.QUILL -> Palette(Paper, InkLine, 1.dp, Ink, InkMuted, InkLine, 14.dp, compact = false)
-    StyleId.SLATE -> Palette(Color(0xFF1E2227), Color(0xFF2E343B), 1.dp, Light, LightMuted, Color(0xFF4A525C), 18.dp, compact = false)
-    StyleId.THREAD -> Palette(Color.White, Color(0xFFD9D4C7), 1.dp, Ink, InkMuted, Color(0xFFD9D4C7), 28.dp, compact = true)
-    StyleId.LANTERN -> {
-        val edge = if (accent == 0) LightMuted else Color(accent).copy(alpha = 1f)
-        Palette(Color(0xFF16181C), edge, 2.dp, Light, LightMuted, edge, 18.dp, compact = false)
-    }
-}
+/** Fallback accent for styles that use the app's colour when the app set none. */
+private val DefaultAccent = Color(0xFFAAB8D4)
 
 /**
  * Draws one banner in the given style. Used by the overlay and by the in-app previews, so a
@@ -93,35 +65,44 @@ fun StyledBanner(
     onAction: (BannerAction) -> Unit = {},
     onReplySend: (BannerAction, String) -> Unit = { _, _ -> },
 ) {
-    val p = paletteFor(style, banner.accentColor)
-    val shape = RoundedCornerShape(p.corner)
-    val title = (if (ui.hideContent) banner.appLabel else banner.title).toString()
+    val spec = specFor(style)
+    val accent = if (banner.accentColor == 0) DefaultAccent else Color(banner.accentColor).copy(alpha = 1f)
+    val chip = if (spec.accentBorder) accent else spec.chip
+    val rawTitle = (if (ui.hideContent) banner.appLabel else banner.title).toString()
+    val title = when {
+        spec.layout == StyleLayout.TERMINAL -> "> $rawTitle"
+        spec.uppercase || spec.layout == StyleLayout.POSTER -> rawTitle.uppercase()
+        else -> rawTitle
+    }
     val text = if (ui.hideContent) "New notification" else banner.text.toString()
     val appLabel = if (count > 1) "${banner.appLabel}, $count new" else banner.appLabel.toString()
     val icon = remember(banner.icon) { banner.icon.toBitmap(96, 96).asImageBitmap() }
+    val titleSize = (ui.fontSizeSp * spec.titleScale + if (spec.layout == StyleLayout.POSTER) 6 else 0).sp
+    val bodySize = ((ui.fontSizeSp - 1) * spec.bodyScale).sp
+    val compact = spec.layout == StyleLayout.LINE
 
     Column(
         modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(p.container)
-            .border(p.borderWidth, p.border, shape)
-            .padding(horizontal = 14.dp, vertical = if (p.compact) 8.dp else 12.dp),
+            .styleSurface(spec, accent)
+            .padding(spec.decoPadding())
+            .padding(horizontal = 14.dp, vertical = if (compact) 8.dp else 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(icon, contentDescription = null, modifier = Modifier.size(if (p.compact) 24.dp else 36.dp).clip(CircleShape))
+            Image(icon, contentDescription = null, modifier = Modifier.size(if (compact) 24.dp else 36.dp).clip(CircleShape))
             Spacer(Modifier.width(10.dp))
-            if (p.compact) {
+            if (compact) {
                 Text(
                     buildAnnotatedString {
-                        withStyle(SpanStyle(color = p.title, fontWeight = FontWeight.Medium)) {
+                        withStyle(SpanStyle(color = spec.title, fontWeight = FontWeight.Medium, fontFamily = spec.font)) {
                             append(if (count > 1) "$title ($count)" else title)
                         }
                         append("  ")
                         append(text)
                     },
-                    color = p.body,
-                    fontSize = ui.fontSizeSp.sp,
+                    color = spec.body,
+                    fontFamily = spec.bodyFont,
+                    fontSize = bodySize,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -131,20 +112,22 @@ fun StyledBanner(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             title,
-                            color = p.title,
+                            color = spec.title,
                             fontWeight = FontWeight.Medium,
-                            fontSize = ui.fontSizeSp.sp,
+                            fontFamily = spec.font,
+                            fontSize = titleSize,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text(appLabel, color = p.body, fontSize = (ui.fontSizeSp - 3).sp, maxLines = 1)
+                        Text(appLabel, color = spec.body, fontSize = (ui.fontSizeSp - 3).sp, maxLines = 1)
                     }
                     Text(
                         text,
-                        color = p.body,
-                        fontSize = (ui.fontSizeSp - 1).sp,
+                        color = spec.body,
+                        fontFamily = spec.bodyFont,
+                        fontSize = bodySize,
                         maxLines = ui.maxLines,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -152,31 +135,31 @@ fun StyledBanner(
             }
         }
         if (replyTo != null) {
-            ReplyRow(p, ui) { onReplySend(replyTo, it) }
+            ReplyRow(spec.title, spec.body, chip, bodySize) { onReplySend(replyTo, it) }
         } else if (banner.actions.isNotEmpty()) {
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                banner.actions.forEach { action -> Chip(action.title.toString(), p) { onAction(action) } }
+                banner.actions.forEach { action -> Chip(action.title.toString(), spec.title, chip) { onAction(action) } }
             }
         }
     }
 }
 
 @Composable
-private fun Chip(label: String, p: Palette, onClick: () -> Unit) {
+private fun Chip(label: String, textColor: Color, border: Color, onClick: () -> Unit) {
     val shape = RoundedCornerShape(8.dp)
     Box(
         Modifier
             .clip(shape)
-            .border(1.dp, p.chipBorder, shape)
+            .border(1.dp, border, shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        Text(label, color = p.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, color = textColor, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-private fun ReplyRow(p: Palette, ui: BannerUi, onSend: (String) -> Unit) {
+private fun ReplyRow(textColor: Color, hintColor: Color, border: Color, size: TextUnit, onSend: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
@@ -193,19 +176,19 @@ private fun ReplyRow(p: Palette, ui: BannerUi, onSend: (String) -> Unit) {
             modifier = Modifier
                 .weight(1f)
                 .focusRequester(focus)
-                .border(1.dp, p.chipBorder, shape)
+                .border(1.dp, border, shape)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
-            textStyle = TextStyle(color = p.title, fontSize = ui.fontSizeSp.sp),
-            cursorBrush = SolidColor(p.title),
+            textStyle = TextStyle(color = textColor, fontSize = size),
+            cursorBrush = SolidColor(textColor),
             maxLines = 4,
             decorationBox = { inner ->
                 Box {
-                    if (text.isEmpty()) Text("Reply", color = p.body, fontSize = ui.fontSizeSp.sp)
+                    if (text.isEmpty()) Text("Reply", color = hintColor, fontSize = size)
                     inner()
                 }
             },
         )
         Spacer(Modifier.width(8.dp))
-        Chip("Send", p) { if (text.isNotBlank()) onSend(text.trim()) }
+        Chip("Send", textColor, border) { if (text.isNotBlank()) onSend(text.trim()) }
     }
 }

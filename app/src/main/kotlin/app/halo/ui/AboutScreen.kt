@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import app.halo.styles.StyleFonts
 
 /** Version, updates and setup replay. Shown at the bottom of the History tab. */
 @Composable
@@ -21,6 +22,13 @@ fun AboutCards(edit: EditGlobal) {
             CardTitle("About Halo $version")
             CardBody("Works offline and collects nothing. New versions are published as GitHub releases; install the APK over this one.")
             OutlinedButton(onClick = { context.openUrl(RELEASES_URL) }) { Text("Check for updates") }
+        }
+        PaperCard {
+            CardTitle("Fonts")
+            CardBody(
+                "Banner styles use ${StyleFonts.names.joinToString(", ")}, each under the SIL Open Font License 1.1. " +
+                    "The licence texts ship inside the app.",
+            )
         }
         PaperCard {
             CardTitle("Setup")

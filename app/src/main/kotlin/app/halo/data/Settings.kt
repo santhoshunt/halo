@@ -12,11 +12,56 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-enum class StyleId(val label: String, val description: String) {
-    QUILL("Quill", "Ivory card with an ink outline"),
-    SLATE("Slate", "Solid dark card with soft light text"),
-    THREAD("Thread", "One slim line with icon and message"),
-    LANTERN("Lantern", "Dark card edged in the app's own colour"),
+enum class StyleFamily(val label: String) {
+    MINIMAL("Minimal"), PHYSICAL("Physical"), GRAPHIC("Graphic"), RETRO("Retro"),
+    FUTURISTIC("Futuristic"), NATURE("Nature"), ARTISAN("Artisan"), BOLD("Bold"),
+}
+
+/** Stored by name, so existing names never change. Visuals live in styles/StyleSpecs.kt. */
+enum class StyleId(val label: String, val description: String, val family: StyleFamily) {
+    QUILL("Quill", "Ivory card with an ink outline", StyleFamily.MINIMAL),
+    THREAD("Thread", "One slim line with icon and message", StyleFamily.MINIMAL),
+    HAIRLINE("Hairline", "White strip resting on a single ink rule", StyleFamily.MINIMAL),
+    MONO_SLAB("Mono slab", "Flat stone block in monospace type", StyleFamily.MINIMAL),
+    GHOST("Ghost", "Pale outline with soft grey type", StyleFamily.MINIMAL),
+
+    STICKY("Sticky pad", "Yellow note with a folded corner, handwritten", StyleFamily.PHYSICAL),
+    LETTERPRESS("Letterpress", "Heavy serif title pressed into card stock", StyleFamily.PHYSICAL),
+    RECEIPT("Receipt", "Till slip with a torn zigzag edge", StyleFamily.PHYSICAL),
+    INDEX_CARD("Index card", "Ruled card with a red margin line", StyleFamily.PHYSICAL),
+    STAMP("Postage stamp", "Perforated edges and a serif face", StyleFamily.PHYSICAL),
+
+    POP_BLOCK("Pop block", "Sunflower block with a hard black shadow", StyleFamily.GRAPHIC),
+    HALFTONE("Halftone", "Bold outline with a corner of pink dots", StyleFamily.GRAPHIC),
+    DUOTONE("Duotone", "Lavender card split by a violet band", StyleFamily.GRAPHIC),
+    TORN_POSTER("Torn poster", "Condensed capitals on a ragged bottom edge", StyleFamily.GRAPHIC),
+    COMIC("Comic panel", "Thick panel outline and a punchy title", StyleFamily.GRAPHIC),
+
+    PHOSPHOR("Green phosphor", "Terminal prompt glowing over scanlines", StyleFamily.RETRO),
+    ARCADE("Arcade", "Pixel type in a pink cabinet frame", StyleFamily.RETRO),
+    TELETEXT("Teletext", "Yellow block type on broadcast black", StyleFamily.RETRO),
+    CASSETTE("Cassette", "Label card with sunset tape stripes", StyleFamily.RETRO),
+    DOT_MATRIX("Dot matrix", "Printer paper with tractor feed holes", StyleFamily.RETRO),
+
+    LANTERN("Lantern", "Dark card edged in the app's own colour", StyleFamily.FUTURISTIC),
+    NEON_RAIL("Neon rail", "Violet light rails above and below", StyleFamily.FUTURISTIC),
+    VISOR("Visor", "Blue corner brackets around spaced capitals", StyleFamily.FUTURISTIC),
+    HOLO("Holo", "Deep indigo to teal with a mint edge", StyleFamily.FUTURISTIC),
+    CIRCUIT("Circuit", "Board-green grid with monospace type", StyleFamily.FUTURISTIC),
+
+    MOSS("Moss", "Soft leaf green with a rounded edge", StyleFamily.NATURE),
+    DUSK("Dusk", "Indigo fading into a rose sky", StyleFamily.NATURE),
+    TIDE("Tide", "Sea blue with a wave along the bottom", StyleFamily.NATURE),
+    CAMPFIRE("Campfire", "Charcoal warming to ember red", StyleFamily.NATURE),
+
+    INK_WASH("Ink wash", "A grey brush blot behind a serif title", StyleFamily.ARTISAN),
+    GRAPHITE("Graphite", "Hand-drawn double outline and handwriting", StyleFamily.ARTISAN),
+    WATERCOLOR("Watercolour", "Pastel blooms soaking through white paper", StyleFamily.ARTISAN),
+    STITCH("Stitch", "Rust running stitch around a serif face", StyleFamily.ARTISAN),
+
+    SLATE("Slate", "Solid dark card with soft light text", StyleFamily.BOLD),
+    MARQUEE("Marquee", "Huge white capitals on black", StyleFamily.BOLD),
+    SIGNAL("Signal", "White card led by a bar in the app's colour", StyleFamily.BOLD),
 }
 
 enum class BannerPosition(val label: String) { TOP("Top"), MIDDLE("Middle"), BOTTOM("Bottom") }
