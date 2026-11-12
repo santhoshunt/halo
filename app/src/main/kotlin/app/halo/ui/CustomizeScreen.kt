@@ -12,6 +12,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import app.halo.data.BannerPosition
+import app.halo.data.EffectId
 import app.halo.data.HaloSettings
 import app.halo.overlay.BannerUi
 import app.halo.overlay.OverlayController
@@ -29,6 +30,7 @@ fun CustomizeScreen(settings: HaloSettings, edit: EditGlobal, overlay: OverlayCo
     // Sliders keep a local value while dragging and save once on release.
     var duration by remember(g.durationMs) { mutableFloatStateOf(g.durationMs.toFloat()) }
     var fontSize by remember(g.fontSizeSp) { mutableFloatStateOf(g.fontSizeSp.toFloat()) }
+    var intensity by remember(g.effectIntensity) { mutableFloatStateOf(g.effectIntensity.toFloat()) }
 
     ScreenList("Customize", "Where banners sit, how long they stay and how much they show.") {
         item {
@@ -41,6 +43,33 @@ fun CustomizeScreen(settings: HaloSettings, edit: EditGlobal, overlay: OverlayCo
                     ui = BannerUi(g.maxLines, fontSize.roundToInt(), g.hideContent),
                 )
                 OutlinedButton(onClick = { overlay.show(sampleBanner(context, sample)) }) { Text("Show on screen") }
+            }
+        }
+        item {
+            PaperCard {
+                CardTitle("Screen effect")
+                CardBody("Plays behind the banner. Taps still reach the app underneath.")
+                ChoiceRow(EffectId.entries, g.effect, { it.label }) { e -> edit { it.copy(effect = e) } }
+                if (g.effect != EffectId.NONE) {
+                    CardBody("Intensity ${intensity.roundToInt()}%")
+                    Slider(
+                        value = intensity,
+                        onValueChange = { intensity = it },
+                        valueRange = 30f..100f,
+                        steps = 13,
+                        onValueChangeFinished = { edit { it.copy(effectIntensity = intensity.roundToInt()) } },
+                    )
+                }
+            }
+        }
+        item {
+            PaperCard {
+                ToggleRow("Stack banners", "Show up to three banners at once instead of replacing the last one.", g.stackBanners) { on ->
+                    edit { it.copy(stackBanners = on) }
+                }
+                ToggleRow("Group by app", "Several notifications from one app become one card, such as \"WhatsApp, 3 new\".", g.groupByApp) { on ->
+                    edit { it.copy(groupByApp = on) }
+                }
             }
         }
         item {

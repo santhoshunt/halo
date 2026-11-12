@@ -87,6 +87,8 @@ fun StyledBanner(
     banner: Banner,
     ui: BannerUi,
     modifier: Modifier = Modifier,
+    /** Banners merged into this card; above 1 the app label reads "<app>, <count> new". */
+    count: Int = 1,
     replyTo: BannerAction? = null,
     onAction: (BannerAction) -> Unit = {},
     onReplySend: (BannerAction, String) -> Unit = { _, _ -> },
@@ -95,6 +97,7 @@ fun StyledBanner(
     val shape = RoundedCornerShape(p.corner)
     val title = (if (ui.hideContent) banner.appLabel else banner.title).toString()
     val text = if (ui.hideContent) "New notification" else banner.text.toString()
+    val appLabel = if (count > 1) "${banner.appLabel}, $count new" else banner.appLabel.toString()
     val icon = remember(banner.icon) { banner.icon.toBitmap(96, 96).asImageBitmap() }
 
     Column(
@@ -111,7 +114,9 @@ fun StyledBanner(
             if (p.compact) {
                 Text(
                     buildAnnotatedString {
-                        withStyle(SpanStyle(color = p.title, fontWeight = FontWeight.Medium)) { append(title) }
+                        withStyle(SpanStyle(color = p.title, fontWeight = FontWeight.Medium)) {
+                            append(if (count > 1) "$title ($count)" else title)
+                        }
                         append("  ")
                         append(text)
                     },
@@ -134,7 +139,7 @@ fun StyledBanner(
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text(banner.appLabel.toString(), color = p.body, fontSize = (ui.fontSizeSp - 3).sp, maxLines = 1)
+                        Text(appLabel, color = p.body, fontSize = (ui.fontSizeSp - 3).sp, maxLines = 1)
                     }
                     Text(
                         text,

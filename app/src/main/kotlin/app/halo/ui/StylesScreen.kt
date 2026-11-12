@@ -26,6 +26,15 @@ fun StylesScreen(settings: HaloSettings, edit: EditGlobal, overlay: OverlayContr
     val ui = BannerUi(g.maxLines, g.fontSizeSp, g.hideContent)
 
     ScreenList("Styles", "The look every banner uses, unless an app has its own style.") {
+        item {
+            PaperCard {
+                ToggleRow(
+                    title = "Random style for each notification",
+                    subtitle = "Picks one of the four styles each time. An app's own style still wins.",
+                    checked = g.randomStyle,
+                ) { on -> edit { it.copy(randomStyle = on) } }
+            }
+        }
         items(StyleId.entries) { style ->
             PaperCard {
                 CardTitle(style.label)

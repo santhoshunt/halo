@@ -62,6 +62,7 @@ fun AppsScreen(settings: HaloSettings, repo: SettingsRepository) {
                     rule = settings.ruleFor(app.pkg),
                     globalStyle = settings.global.style,
                     onEnabled = { on -> scope.launch { repo.setAppEnabled(app.pkg, on) } },
+                    onQuiet = { on -> scope.launch { repo.setAppQuiet(app.pkg, on) } },
                     onStyle = { style -> scope.launch { repo.setAppStyle(app.pkg, style) } },
                     onSystemSettings = { context.openAppNotificationSettings(app.pkg) },
                 )
@@ -76,6 +77,7 @@ private fun AppRow(
     rule: AppRule,
     globalStyle: StyleId,
     onEnabled: (Boolean) -> Unit,
+    onQuiet: (Boolean) -> Unit,
     onStyle: (StyleId?) -> Unit,
     onSystemSettings: () -> Unit,
 ) {
@@ -90,6 +92,7 @@ private fun AppRow(
             }
             Switch(checked = rule.enabled, onCheckedChange = onEnabled)
         }
+        ToggleRow("Quiet while open", "No banners while this app is on screen.", rule.quietWhenOpen, onQuiet)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box {
                 OutlinedButton(onClick = { menuOpen = true }) { Text("Style") }

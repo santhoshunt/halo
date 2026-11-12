@@ -2,6 +2,8 @@ package app.halo.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -84,7 +86,8 @@ fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Bool
 
 @Composable
 fun <T> ChoiceRow(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Scrolls sideways so four chips fit on narrow screens.
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { option ->
             FilterChip(selected = option == selected, onClick = { onSelect(option) }, label = { Text(label(option)) })
         }

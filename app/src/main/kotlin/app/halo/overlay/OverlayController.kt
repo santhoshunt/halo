@@ -20,18 +20,22 @@ import android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
 import android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
 import android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
 import android.widget.FrameLayout
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import app.halo.data.BannerPosition
 import app.halo.data.HaloSettings
 import app.halo.data.StyleId
+import app.halo.effects.EffectOverlay
 import app.halo.notify.Banner
 import app.halo.notify.BannerAction
 import app.halo.notify.HaloListenerService
@@ -43,78 +47,130 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+/** One card on screen. Grouping merges several notifications from one app into one card. */
+data class StackEntry(
+    /** "app:<package>" when grouped by app, otherwise the notification key. */
+    val id: String,
+    /** The latest banner merged into this card. */
+    val banner: Banner,
+    /** Every notification key merged in; the card goes when all of them are removed. */
+    val keys: Set<String>,
+    /** Banners merged so far, shown as "<app>, <count> new" above 1. */
+    val count: Int,
+    /** Fixed when the card first appears, so a random style doesn't change on every merge. */
+    val style: StyleId,
+    /** Bumps on every merge, restarting the slide-in and swipe state. */
+    val showId: Int,
+)
+
 /**
- * Shows one banner at a time in a TYPE_APPLICATION_OVERLAY window. A newer banner replaces the
- * one on screen. Main thread only.
+ * Shows up to [MAX_STACK] cards in one TYPE_APPLICATION_OVERLAY window, with an optional
+ * screen effect window underneath. Main thread only.
  */
 class OverlayController(private val app: Application, private val settings: StateFlow<HaloSettings>) {
     private val wm = app.getSystemService(WindowManager::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val effects = EffectOverlay(app)
 
-    private val banner = mutableStateOf<Banner?>(null)
-    private val styleOverride = mutableStateOf<StyleId?>(null)
-    private val replyTo = mutableStateOf<BannerAction?>(null)
-    private val showId = mutableIntStateOf(0)
+    private val stack = mutableStateListOf<StackEntry>()
+    /** Entry id and the reply action whose text field is open. */
+    private val replyTo = mutableStateOf<Pair<String, BannerAction>?>(null)
+    private val timers = HashMap<String, Job>()
+    private var nextShowId = 0
 
     private var frame: BannerFrame? = null
     private var owner: OverlayLifecycleOwner? = null
-    private var timer: Job? = null
 
-    /** [style] forces a style for previews; null uses the app's rule or the global style. */
+    /** [style] forces a style for previews; null uses the app's rule, random style or the global style. */
     fun show(next: Banner, style: StyleId? = null) {
         if (!Settings.canDrawOverlays(app)) return
-        banner.value = next
-        styleOverride.value = style
-        replyTo.value = null
-        showId.intValue++
-        val view = frame ?: attach() ?: return
-        runCatching { wm.updateViewLayout(view, layoutParams(focusable = false)) }
-        restartTimer()
+        val s = settings.value
+        val g = s.global
+        val id = if (g.groupByApp) "app:${next.packageName}" else next.key
+        val index = stack.indexOfFirst { it.id == id || next.key in it.keys }
+        val entry = if (index >= 0) {
+            val old = stack.removeAt(index)
+            // Keep the card's identity while its reply box is open, so typed text survives.
+            val showId = if (replyTo.value?.first == old.id) old.showId else ++nextShowId
+            // A preview's forced style replaces the card's style; otherwise the card keeps its own.
+            old.copy(
+                banner = next,
+                keys = old.keys + next.key,
+                count = old.count + 1,
+                style = style ?: old.style,
+                showId = showId,
+            )
+        } else {
+            val chosen = style ?: s.ruleFor(next.packageName).style
+                ?: if (g.randomStyle) StyleId.entries.random() else g.style
+            StackEntry(id, next, setOf(next.key), count = 1, style = chosen, showId = ++nextShowId)
+        }
+        if (!g.stackBanners) stack.toList().forEach { remove(it.id) }
+        stack.add(0, entry)
+        while (stack.size > MAX_STACK) remove(stack.last().id)
+
+        val playEffect = { effects.play(g.effect, next.accentColor, g.effectIntensity, g.durationMs.toLong()) }
+        when {
+            frame == null -> {
+                // The effect window goes in first so it sits under the banner window.
+                playEffect()
+                attach() ?: return
+            }
+            effects.isShowing -> playEffect()
+            // The effect was switched on while banners were showing. Re-add the banner window
+            // above the new effect window; skipped while a reply is open so typing isn't lost.
+            effects.canPlay(g.effect) && replyTo.value == null -> {
+                removeBannerWindow()
+                playEffect()
+                attach() ?: return
+            }
+        }
+        frame?.let { view -> runCatching { wm.updateViewLayout(view, layoutParams(focusable = replyTo.value != null)) } }
+        restartTimer(entry)
     }
 
-    fun dismiss(clearOriginal: Boolean) {
-        val current = banner.value
-        if (clearOriginal && current != null) cancelOriginal(current.key)
-        timer?.cancel()
-        banner.value = null
-        replyTo.value = null
-        frame?.let { runCatching { wm.removeView(it) } }
-        owner?.stop()
-        frame = null
-        owner = null
-    }
-
-    /** The original notification went away elsewhere, so its banner goes too. */
+    /** A notification went away elsewhere; its card goes when none of its notifications remain. */
     fun onRemoved(key: String) {
-        if (banner.value?.key == key) dismiss(clearOriginal = false)
+        val index = stack.indexOfFirst { key in it.keys }
+        if (index < 0) return
+        val entry = stack[index]
+        val keys = entry.keys - key
+        if (keys.isEmpty()) dismiss(entry.id, clearOriginal = false) else stack[index] = entry.copy(keys = keys)
     }
 
-    fun enterReply(action: BannerAction) {
+    fun dismiss(id: String, clearOriginal: Boolean) {
+        val entry = stack.firstOrNull { it.id == id } ?: return
+        if (clearOriginal) entry.keys.forEach(::cancelOriginal)
+        remove(id)
+        if (stack.isEmpty()) detach()
+    }
+
+    private fun enterReply(id: String, action: BannerAction) {
         val view = frame ?: return
-        timer?.cancel()
+        timers.remove(id)?.cancel()
         runCatching { wm.updateViewLayout(view, layoutParams(focusable = true)) }
-        replyTo.value = action
+        replyTo.value = id to action
     }
 
     fun exitReply() {
-        val view = frame ?: return
+        val (id, _) = replyTo.value ?: return
         replyTo.value = null
-        runCatching { wm.updateViewLayout(view, layoutParams(focusable = false)) }
-        restartTimer()
+        frame?.let { view -> runCatching { wm.updateViewLayout(view, layoutParams(focusable = false)) } }
+        stack.firstOrNull { it.id == id }?.let(::restartTimer)
     }
 
-    private fun tap(current: Banner) {
-        current.contentIntent?.let { send(it, fillIn = null) }
-        if (current.autoCancel) cancelOriginal(current.key)
-        dismiss(clearOriginal = false)
+    private fun tap(entry: StackEntry) {
+        entry.banner.contentIntent?.let { send(it, fillIn = null) }
+        if (entry.banner.autoCancel) cancelOriginal(entry.banner.key)
+        dismiss(entry.id, clearOriginal = false)
     }
 
-    private fun runAction(action: BannerAction) {
+    private fun runAction(entry: StackEntry, action: BannerAction) {
         send(action.intent, fillIn = null)
-        dismiss(clearOriginal = false)
+        dismiss(entry.id, clearOriginal = false)
     }
 
-    private fun sendReply(action: BannerAction, text: String) {
+    private fun sendReply(entry: StackEntry, action: BannerAction, text: String) {
         val input = action.remoteInput ?: return
         val fillIn = Intent().addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
         RemoteInput.addResultsToIntent(
@@ -122,7 +178,7 @@ class OverlayController(private val app: Application, private val settings: Stat
         )
         RemoteInput.setResultsSource(fillIn, RemoteInput.SOURCE_FREE_FORM_INPUT)
         send(action.intent, fillIn)
-        dismiss(clearOriginal = false)
+        dismiss(entry.id, clearOriginal = false)
     }
 
     private fun send(intent: PendingIntent, fillIn: Intent?) {
@@ -143,13 +199,21 @@ class OverlayController(private val app: Application, private val settings: Stat
             .onFailure { Log.w(TAG, "cancelNotification failed", it) }
     }
 
-    private fun restartTimer() {
-        timer?.cancel()
-        val current = banner.value ?: return
-        if (current.sticky) return
-        timer = scope.launch {
+    private fun remove(id: String) {
+        timers.remove(id)?.cancel()
+        stack.removeAll { it.id == id }
+        if (replyTo.value?.first == id) {
+            replyTo.value = null
+            frame?.let { view -> runCatching { wm.updateViewLayout(view, layoutParams(focusable = false)) } }
+        }
+    }
+
+    private fun restartTimer(entry: StackEntry) {
+        timers.remove(entry.id)?.cancel()
+        if (entry.banner.sticky || replyTo.value?.first == entry.id) return
+        timers[entry.id] = scope.launch {
             delay(settings.value.global.durationMs.toLong())
-            dismiss(clearOriginal = false)
+            dismiss(entry.id, clearOriginal = false)
         }
     }
 
@@ -173,36 +237,60 @@ class OverlayController(private val app: Application, private val settings: Stat
             // permission was revoked between the check and the call.
             Log.w(TAG, "addView failed", e)
             lifecycle.stop()
+            stack.clear()
+            effects.hide()
             null
         }
     }
 
+    private fun detach() {
+        replyTo.value = null
+        timers.values.forEach { it.cancel() }
+        timers.clear()
+        removeBannerWindow()
+        effects.hide()
+    }
+
+    private fun removeBannerWindow() {
+        frame?.let { runCatching { wm.removeView(it) } }
+        owner?.stop()
+        frame = null
+        owner = null
+    }
+
     @Composable
     private fun Content() {
-        val current = banner.value ?: return
         val s by settings.collectAsState()
         val g = s.global
-        key(showId.intValue) {
-            BannerHost(
-                banner = current,
-                style = styleOverride.value ?: s.styleFor(current.packageName),
-                ui = BannerUi(g.maxLines, g.fontSizeSp, g.hideContent),
-                replyTo = replyTo.value,
-                callbacks = BannerCallbacks(
-                    onTap = { tap(current) },
-                    onAction = ::runAction,
-                    onReplyOpen = ::enterReply,
-                    onReplySend = ::sendReply,
-                    onDismiss = { dismiss(clearOriginal = settings.value.global.dismissOriginalOnSwipe) },
-                ),
-            )
+        val reply = replyTo.value
+        // The newest card sits nearest the screen edge the stack is anchored to.
+        val cards = if (g.position == BannerPosition.BOTTOM) stack.asReversed() else stack
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            cards.forEach { entry ->
+                key(entry.id, entry.showId) {
+                    BannerHost(
+                        banner = entry.banner,
+                        style = entry.style,
+                        ui = BannerUi(g.maxLines, g.fontSizeSp, g.hideContent),
+                        count = entry.count,
+                        replyTo = reply?.takeIf { it.first == entry.id }?.second,
+                        callbacks = BannerCallbacks(
+                            onTap = { tap(entry) },
+                            onAction = { action -> runAction(entry, action) },
+                            onReplyOpen = { action -> enterReply(entry.id, action) },
+                            onReplySend = { action, text -> sendReply(entry, action, text) },
+                            onDismiss = { dismiss(entry.id, clearOriginal = settings.value.global.dismissOriginalOnSwipe) },
+                        ),
+                    )
+                }
+            }
         }
     }
 
     private fun layoutParams(focusable: Boolean): WindowManager.LayoutParams {
         val insets = wm.currentWindowMetrics.windowInsets
         val margin = (8 * app.resources.displayMetrics.density).toInt()
-        // FLAG_NOT_TOUCH_MODAL passes touches outside the banner to the app underneath.
+        // FLAG_NOT_TOUCH_MODAL passes touches outside the banners to the app underneath.
         var flags = FLAG_NOT_TOUCH_MODAL or FLAG_LAYOUT_IN_SCREEN
         flags = if (focusable) flags or FLAG_WATCH_OUTSIDE_TOUCH else flags or FLAG_NOT_FOCUSABLE
         return WindowManager.LayoutParams(
@@ -234,7 +322,7 @@ class OverlayController(private val app: Application, private val settings: Stat
     }
 
     /**
-     * Root view of the overlay window. An overlay has no OnBackPressedDispatcher, so Compose
+     * Root view of the banner window. An overlay has no OnBackPressedDispatcher, so Compose
      * BackHandler never fires; Back and outside taps are caught here to leave reply mode.
      */
     private class BannerFrame(
@@ -258,5 +346,6 @@ class OverlayController(private val app: Application, private val settings: Stat
 
     private companion object {
         const val TAG = "HaloOverlay"
+        const val MAX_STACK = 3
     }
 }

@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MurmurTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    HaloRoot(app.repo, app.overlay)
+                    HaloRoot(app.repo, app.overlay, app.history)
                 }
             }
         }

@@ -40,7 +40,14 @@ class BannerCallbacks(
 
 /** The banner as it sits in the overlay: slide-in, horizontal swipe to dismiss, tap to open. */
 @Composable
-fun BannerHost(banner: Banner, style: StyleId, ui: BannerUi, replyTo: BannerAction?, callbacks: BannerCallbacks) {
+fun BannerHost(
+    banner: Banner,
+    style: StyleId,
+    ui: BannerUi,
+    count: Int,
+    replyTo: BannerAction?,
+    callbacks: BannerCallbacks,
+) {
     val scope = rememberCoroutineScope()
     val offsetX = remember { Animatable(0f) }
     val enter = remember { Animatable(0f) }
@@ -78,6 +85,7 @@ fun BannerHost(banner: Banner, style: StyleId, ui: BannerUi, replyTo: BannerActi
             style = style,
             banner = banner,
             ui = ui,
+            count = count,
             replyTo = replyTo,
             onAction = { action ->
                 if (action.remoteInput != null) callbacks.onReplyOpen(action) else callbacks.onAction(action)

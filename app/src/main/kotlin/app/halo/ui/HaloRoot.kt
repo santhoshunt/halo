@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import app.halo.R
 import app.halo.data.GlobalSettings
+import app.halo.data.HistoryStore
 import app.halo.data.SettingsRepository
 import app.halo.overlay.OverlayController
 import kotlinx.coroutines.launch
@@ -33,11 +34,11 @@ enum class Tab(val label: String, @param:DrawableRes val icon: Int) {
     CUSTOMIZE("Customize", R.drawable.ic_tab_customize),
     FOCUS("Focus", R.drawable.ic_tab_focus),
     APPS("Apps", R.drawable.ic_tab_apps),
-    ABOUT("About", R.drawable.ic_tab_about),
+    HISTORY("History", R.drawable.ic_tab_history),
 }
 
 @Composable
-fun HaloRoot(repo: SettingsRepository, overlay: OverlayController) {
+fun HaloRoot(repo: SettingsRepository, overlay: OverlayController, history: HistoryStore) {
     // Null until DataStore has loaded, so Setup never flashes for someone who finished it.
     val loaded by repo.settings.collectAsState(initial = null)
     val settings = loaded ?: return
@@ -71,7 +72,7 @@ fun HaloRoot(repo: SettingsRepository, overlay: OverlayController) {
                 Tab.CUSTOMIZE -> CustomizeScreen(settings, edit, overlay)
                 Tab.FOCUS -> FocusScreen(settings, edit)
                 Tab.APPS -> AppsScreen(settings, repo)
-                Tab.ABOUT -> AboutScreen(edit)
+                Tab.HISTORY -> HistoryScreen(settings, edit, history)
             }
         }
     }

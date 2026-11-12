@@ -2,6 +2,8 @@ package app.halo
 
 import android.app.Application
 import app.halo.data.HaloSettings
+import app.halo.data.HistoryStore
+import java.io.File
 import app.halo.data.SettingsRepository
 import app.halo.overlay.OverlayController
 import kotlinx.coroutines.CoroutineScope
@@ -21,11 +23,14 @@ class HaloApp : Application() {
         private set
     lateinit var overlay: OverlayController
         private set
+    lateinit var history: HistoryStore
+        private set
 
     override fun onCreate() {
         super.onCreate()
         repo = SettingsRepository(this)
         settings = repo.settings.stateIn(appScope, SharingStarted.Eagerly, HaloSettings())
         overlay = OverlayController(this, settings)
+        history = HistoryStore(File(filesDir, "history.json"), appScope)
     }
 }

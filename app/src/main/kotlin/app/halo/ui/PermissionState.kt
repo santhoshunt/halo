@@ -17,13 +17,21 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.halo.notify.HaloListenerService
+import app.halo.notify.hasUsageAccess
 
-data class PermissionState(val listener: Boolean, val overlay: Boolean, val batteryExempt: Boolean)
+data class PermissionState(
+    val listener: Boolean,
+    val overlay: Boolean,
+    val batteryExempt: Boolean,
+    /** Only needed for quiet apps. */
+    val usageAccess: Boolean,
+)
 
 fun readPermissionState(context: Context) = PermissionState(
     listener = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName),
     overlay = Settings.canDrawOverlays(context),
     batteryExempt = context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName),
+    usageAccess = hasUsageAccess(context),
 )
 
 /** Permission state, re-read every time Halo comes back to the foreground from Settings. */
@@ -61,6 +69,11 @@ fun Context.openOverlaySettings() = launch(Intent(Settings.ACTION_MANAGE_OVERLAY
 fun Context.openBatterySettings() = launch(
     Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri()),
     fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+)
+
+fun Context.openUsageAccessSettings() = launch(
+    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, packageUri()),
+    fallback = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS),
 )
 
 fun Context.openAppInfo() = launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri()))

@@ -63,6 +63,13 @@ fun SetupScreen(edit: EditGlobal) {
                 ) { context.openBatterySettings() }
             }
             item {
+                PermissionCard(
+                    title = "Usage access (optional)",
+                    body = "Only needed for quiet apps: it lets Halo see which app is open. Restricted settings can block it too.",
+                    granted = perms.usageAccess,
+                ) { context.openUsageAccessSettings() }
+            }
+            item {
                 PaperCard {
                     CardTitle("Turn off system pop-ups")
                     CardBody(
